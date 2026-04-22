@@ -66,11 +66,15 @@ export interface Ensayo {
   creadoEn: Date
 }
 
+export type TipoPregunta = 'alternativa' | 'desarrollo'
+
 export interface Pregunta {
   id?: string
   ensayoId: string
   numero: number
+  tipoPregunta?: TipoPregunta   // undefined = 'alternativa' (retrocompatible)
   respuestaCorrecta: Exclude<Respuesta, 'omitida'>
+  puntajeMaximo?: number        // solo para desarrollo (ej. 2 = 0/1/2 pts)
   eje: Eje
   habilidad: Habilidad
   oa: string
@@ -81,7 +85,8 @@ export interface RespuestaEstudiante {
   ensayoId: string
   estudianteId: string
   numeroPregunta: number
-  respuesta: Respuesta
+  respuesta: Respuesta           // 'omitida' cuando es desarrollo sin puntaje
+  puntaje?: number              // solo para desarrollo
 }
 
 // ─── Umbrales de desempeño ────────────────────────────────────────────────────

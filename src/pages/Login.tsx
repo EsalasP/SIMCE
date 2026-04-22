@@ -16,8 +16,15 @@ export function Login() {
     setError(null)
     try {
       await signInWithGoogle()
-    } catch {
-      setError('No se pudo iniciar sesión. Inténtalo de nuevo.')
+    } catch (err) {
+      console.error('Firebase auth error:', err)
+      const code = (err as { code?: string }).code ?? ''
+      let msg = 'No se pudo iniciar sesión. Inténtalo de nuevo.'
+      if (code === 'auth/popup-blocked') msg = 'El navegador bloqueó la ventana emergente. Permite popups para este sitio e intenta de nuevo.'
+      if (code === 'auth/unauthorized-domain') msg = 'Este dominio no está autorizado en Firebase. Revisa la configuración de Authentication.'
+      if (code === 'auth/invalid-api-key') msg = 'La clave de Firebase no es válida. Revisa el archivo .env.local.'
+      if (code === 'auth/popup-closed-by-user') msg = 'Cerraste la ventana de inicio de sesión. Inténtalo de nuevo.'
+      setError(msg)
       setLoading(false)
     }
   }

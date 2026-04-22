@@ -49,28 +49,41 @@ export function calcularResultadoEstudiante(
   umbrales: UmbralesDesempeno = UMBRALES_DEFAULT,
 ): ResultadoEstudiante {
   const respMap: Record<number, Respuesta> = {}
-  for (const r of respuestas) respMap[r.numeroPregunta] = r.respuesta
+  const puntajeMap: Record<number, number> = {}
+  for (const r of respuestas) {
+    respMap[r.numeroPregunta] = r.respuesta
+    if (r.puntaje !== undefined) puntajeMap[r.numeroPregunta] = r.puntaje
+  }
 
-  // Derive ejes from the actual preguntas (supports both Matemática and Lectura)
   const ejesUsados = [...new Set(preguntas.map((p) => p.eje))] as Eje[]
 
-  let correctas = 0
+  let puntajeObtenido = 0
+  let puntajeTotal = 0
   const ejeContadores: Partial<Record<Eje, { correctas: number; total: number }>> = {}
   for (const eje of ejesUsados) ejeContadores[eje] = { correctas: 0, total: 0 }
 
   for (const p of preguntas) {
-    const resp = respMap[p.numero] ?? 'omitida'
-    const esCorrecta = resp === p.respuestaCorrecta
-    if (esCorrecta) correctas++
+    const esDesarrollo = p.tipoPregunta === 'desarrollo'
+    const maxPts = esDesarrollo ? (p.puntajeMaximo ?? 2) : 1
+    puntajeTotal += maxPts
+
+    let pts: number
+    if (esDesarrollo) {
+      pts = Math.min(puntajeMap[p.numero] ?? 0, maxPts)
+    } else {
+      const resp = respMap[p.numero] ?? 'omitida'
+      pts = resp === p.respuestaCorrecta ? 1 : 0
+    }
+    puntajeObtenido += pts
+
     const contador = ejeContadores[p.eje]
     if (contador) {
-      contador.total++
-      if (esCorrecta) contador.correctas++
+      contador.total += maxPts
+      contador.correctas += pts
     }
   }
 
-  const total = preguntas.length
-  const porcentaje = total > 0 ? Math.round((correctas / total) * 100) : 0
+  const porcentaje = puntajeTotal > 0 ? Math.round((puntajeObtenido / puntajeTotal) * 100) : 0
 
   const porEje: ResultadoEstudiante['porEje'] = {}
   for (const eje of ejesUsados) {
@@ -85,10 +98,10 @@ export function calcularResultadoEstudiante(
   }
 
   return {
-    estudianteId: estudiante.id!,
+    estudianteId: estudiante.id ?? '',
     nombre: estudiante.nombre,
-    correctas,
-    total,
+    correctas: puntajeObtenido,
+    total: puntajeTotal,
     porcentaje,
     nivelDesempeno: nivelDesempeno(porcentaje, umbrales),
     porEje,
@@ -103,15 +116,27 @@ export function calcularResultadosPorPregunta(
 ): ResultadoPregunta[] {
   return preguntas.map((p) => {
     const respuestasP = todasRespuestas.filter((r) => r.numeroPregunta === p.numero)
-    const correctas = respuestasP.filter((r) => r.respuesta === p.respuestaCorrecta).length
+    const esDesarrollo = p.tipoPregunta === 'desarrollo'
+    const maxPts = esDesarrollo ? (p.puntajeMaximo ?? 2) : 1
+
+    let correctas: number
+    let total: number
+    if (esDesarrollo) {
+      correctas = respuestasP.reduce((sum, r) => sum + Math.min(r.puntaje ?? 0, maxPts), 0)
+      total = totalEstudiantes * maxPts
+    } else {
+      correctas = respuestasP.filter((r) => r.respuesta === p.respuestaCorrecta).length
+      total = totalEstudiantes
+    }
+
     return {
       numero: p.numero,
       eje: p.eje,
       habilidad: p.habilidad,
       oa: p.oa,
       correctas,
-      total: totalEstudiantes,
-      porcentaje: totalEstudiantes > 0 ? Math.round((correctas / totalEstudiantes) * 100) : 0,
+      total,
+      porcentaje: total > 0 ? Math.round((correctas / total) * 100) : 0,
     }
   })
 }

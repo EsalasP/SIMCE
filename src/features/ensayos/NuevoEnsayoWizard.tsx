@@ -24,7 +24,9 @@ const ALTERNATIVAS = ['A', 'B', 'C', 'D'] as const
 
 interface PreguntaConfig {
   numero: number
+  tipoPregunta: 'alternativa' | 'desarrollo'
   respuestaCorrecta: Exclude<Respuesta, 'omitida'>
+  puntajeMaximo: number
   eje: Eje
   habilidad: Habilidad
   oa: string
@@ -35,7 +37,9 @@ const STEPS = ['Datos del ensayo', 'Clave de respuestas', 'Eje y habilidad']
 function defaultPregunta(i: number, asignatura: Asignatura): PreguntaConfig {
   return {
     numero: i + 1,
+    tipoPregunta: 'alternativa',
     respuestaCorrecta: 'A',
+    puntajeMaximo: 2,
     eje: asignatura === 'Matemática' ? 'Números y Operaciones' : 'Comprensión lectora',
     habilidad: asignatura === 'Matemática' ? 'Resolver problemas' : 'Localizar',
     oa: '',
@@ -65,7 +69,14 @@ export function NuevoEnsayoWizard() {
 
   const handleAsignaturaChange = (v: Asignatura) => {
     setAsignatura(v)
-    setPreguntas((prev) => prev.map((p, i) => ({ ...defaultPregunta(i, v), numero: p.numero, respuestaCorrecta: p.respuestaCorrecta, oa: p.oa })))
+    setPreguntas((prev) => prev.map((p, i) => ({
+      ...defaultPregunta(i, v),
+      numero: p.numero,
+      tipoPregunta: p.tipoPregunta,
+      respuestaCorrecta: p.respuestaCorrecta,
+      puntajeMaximo: p.puntajeMaximo,
+      oa: p.oa,
+    })))
   }
 
   const updateNumPreguntas = (n: number) => {
@@ -102,7 +113,9 @@ export function NuevoEnsayoWizard() {
   const habilidadesActuales = asignatura === 'Matemática' ? HABILIDADES_MATEMATICA : HABILIDADES_LECTURA
 
   const step1Valid = nombre.trim() && cursoId !== null
-  const step2Valid = preguntas.every((p) => p.respuestaCorrecta)
+  const step2Valid = preguntas.every((p) =>
+    p.tipoPregunta === 'desarrollo' ? (p.puntajeMaximo ?? 0) > 0 : !!p.respuestaCorrecta,
+  )
   const step3Valid = preguntas.every((p) => p.eje)
 
   const handleFinish = async () => {
@@ -250,28 +263,54 @@ export function NuevoEnsayoWizard() {
               <Card>
                 <CardContent className="p-6">
                   <p className="text-sm text-muted-foreground mb-4">
-                    Indica la alternativa correcta para cada pregunta.
+                    Indica la clave de cada pregunta. Haz clic en <strong>Alt</strong> para cambiar a pregunta de desarrollo.
                   </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                     {preguntas.map((p, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground w-6 text-right">{p.numero}</span>
-                        <div className="flex gap-0.5">
-                          {ALTERNATIVAS.map((alt) => (
-                            <button
-                              key={alt}
-                              onClick={() => setPreguntaField(i, 'respuestaCorrecta', alt)}
-                              className={cn(
-                                'w-7 h-7 text-xs font-semibold rounded transition-colors border',
-                                p.respuestaCorrecta === alt
-                                  ? 'bg-primary text-primary-foreground border-primary'
-                                  : 'border-border hover:bg-accent',
-                              )}
-                            >
-                              {alt}
-                            </button>
-                          ))}
-                        </div>
+                      <div key={i} className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground w-6 text-right shrink-0">{p.numero}</span>
+                        {/* Toggle tipo */}
+                        <button
+                          onClick={() => setPreguntaField(i, 'tipoPregunta', p.tipoPregunta === 'desarrollo' ? 'alternativa' : 'desarrollo')}
+                          className={cn(
+                            'text-[9px] px-1.5 py-0.5 rounded border font-semibold shrink-0 transition-colors',
+                            p.tipoPregunta === 'desarrollo'
+                              ? 'bg-violet-100 text-violet-700 border-violet-300 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-700'
+                              : 'border-border text-muted-foreground hover:bg-accent',
+                          )}
+                        >
+                          {p.tipoPregunta === 'desarrollo' ? 'Des' : 'Alt'}
+                        </button>
+                        {p.tipoPregunta === 'desarrollo' ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">pts máx:</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={10}
+                              value={p.puntajeMaximo}
+                              onChange={(e) => setPreguntaField(i, 'puntajeMaximo', Number.parseInt(e.target.value) || 2)}
+                              className="w-10 h-7 text-xs text-center border border-input rounded bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex gap-0.5">
+                            {ALTERNATIVAS.map((alt) => (
+                              <button
+                                key={alt}
+                                onClick={() => setPreguntaField(i, 'respuestaCorrecta', alt)}
+                                className={cn(
+                                  'w-7 h-7 text-xs font-semibold rounded transition-colors border',
+                                  p.respuestaCorrecta === alt
+                                    ? 'bg-primary text-primary-foreground border-primary'
+                                    : 'border-border hover:bg-accent',
+                                )}
+                              >
+                                {alt}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
