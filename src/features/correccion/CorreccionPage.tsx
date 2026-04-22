@@ -1,4 +1,3 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useParams, Link } from 'react-router-dom'
 import { useState, useCallback, useRef } from 'react'
 import { ArrowLeft, ClipboardPaste, Save, BarChart3 } from 'lucide-react'
@@ -6,7 +5,14 @@ import { Topbar } from '@/components/layout/Topbar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent } from '@/components/ui/card'
-import { db, bulkUpsertRespuestas } from '@/db'
+import {
+  useEnsayo,
+  useCurso,
+  useEstudiantesByCurso,
+  usePreguntasByEnsayo,
+  useRespuestasByEnsayo,
+  bulkUpsertRespuestas,
+} from '@/db'
 import { cn, parsePasteData, normalizarRespuesta, formatFecha } from '@/lib/utils'
 import type { Respuesta } from '@/types'
 
@@ -19,38 +25,46 @@ const CELL_COLORS: Record<string, string> = {
   empty: 'border-border hover:bg-accent/50',
 }
 
+const SKELETON_KEYS = ['a', 'b', 'c', 'd', 'e']
+
+function pctColorClass(pct: number): string {
+  if (pct >= 75) return 'text-emerald-600'
+  if (pct >= 50) return 'text-amber-600'
+  return 'text-red-600'
+}
+
+function cellColorClass(resp: Respuesta | null, isCorrect: boolean): string {
+  if (!resp) return CELL_COLORS.empty
+  if (resp === 'omitida') return CELL_COLORS.omitted
+  return isCorrect ? CELL_COLORS.correct : CELL_COLORS.incorrect
+}
+
+function saveButtonLabel(saving: boolean, saved: boolean, pendingCount: number): string {
+  if (saving) return 'Guardando…'
+  if (saved) return '¡Guardado!'
+  if (pendingCount > 0) return `Guardar (${pendingCount})`
+  return 'Guardar'
+}
+
 export function CorreccionPage() {
-  const { ensayoId: paramId } = useParams<{ ensayoId: string }>()
-  const ensayoId = parseInt(paramId ?? '0')
+  const { ensayoId } = useParams<{ ensayoId: string }>()
 
-  const ensayo = useLiveQuery(() => db.ensayos.get(ensayoId), [ensayoId])
-  const curso = useLiveQuery(
-    () => ensayo ? db.cursos.get(ensayo.cursoId) : undefined,
-    [ensayo],
-  )
-  const estudiantes = useLiveQuery(
-    () => ensayo ? db.estudiantes.where('cursoId').equals(ensayo.cursoId).sortBy('nombre') : [],
-    [ensayo],
-  )
-  const preguntas = useLiveQuery(
-    () => db.preguntas.where('ensayoId').equals(ensayoId).sortBy('numero'),
-    [ensayoId],
-  )
-  const respuestasDB = useLiveQuery(
-    () => db.respuestas.where('ensayoId').equals(ensayoId).toArray(),
-    [ensayoId],
-  )
+  const ensayo = useEnsayo(ensayoId)
+  const curso = useCurso(ensayo?.cursoId)
+  const estudiantes = useEstudiantesByCurso(ensayo?.cursoId)
+  const preguntas = usePreguntasByEnsayo(ensayoId)
+  const respuestasDB = useRespuestasByEnsayo(ensayoId)
 
-  // Estado local: Map<`${estudianteId}-${numeroPregunta}`, Respuesta>
   const [localChanges, setLocalChanges] = useState<Map<string, Respuesta>>(new Map())
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const getRespuesta = useCallback(
-    (estudianteId: number, numPregunta: number): Respuesta | null => {
+    (estudianteId: string, numPregunta: number): Respuesta | null => {
       const key = `${estudianteId}-${numPregunta}`
-      if (localChanges.has(key)) return localChanges.get(key)!
+      const cached = localChanges.get(key)
+      if (cached !== undefined) return cached
       const fromDB = respuestasDB?.find(
         (r) => r.estudianteId === estudianteId && r.numeroPregunta === numPregunta,
       )
@@ -59,20 +73,18 @@ export function CorreccionPage() {
     [localChanges, respuestasDB],
   )
 
-  const setRespuesta = (estudianteId: number, numPregunta: number, resp: Respuesta) => {
+  const setRespuesta = (estudianteId: string, numPregunta: number, resp: Respuesta) => {
     setLocalChanges((prev) => new Map(prev).set(`${estudianteId}-${numPregunta}`, resp))
     setSaved(false)
   }
 
-  const ciclarRespuesta = (estudianteId: number, numPregunta: number) => {
+  const ciclarRespuesta = (estudianteId: string, numPregunta: number) => {
     const current = getRespuesta(estudianteId, numPregunta)
     const idx = current ? ALTERNATIVAS.indexOf(current) : -1
     const next = ALTERNATIVAS[(idx + 1) % ALTERNATIVAS.length]
     setRespuesta(estudianteId, numPregunta, next)
   }
 
-  // Pegado masivo desde Excel/Sheets
-  // Formato esperado: estudiantes en filas, preguntas en columnas
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
       e.preventDefault()
@@ -98,10 +110,12 @@ export function CorreccionPage() {
   )
 
   const handleSave = async () => {
-    if (!preguntas || !estudiantes) return
+    if (!preguntas || !ensayoId) return
     setSaving(true)
     const toSave = Array.from(localChanges.entries()).map(([key, respuesta]) => {
-      const [estudianteId, numeroPregunta] = key.split('-').map(Number)
+      const dashIdx = key.lastIndexOf('-')
+      const estudianteId = key.slice(0, dashIdx)
+      const numeroPregunta = Number.parseInt(key.slice(dashIdx + 1))
       return { ensayoId, estudianteId, numeroPregunta, respuesta }
     })
     await bulkUpsertRespuestas(toSave)
@@ -113,11 +127,106 @@ export function CorreccionPage() {
 
   const loading = !ensayo || !estudiantes || !preguntas || !respuestasDB
 
-  if (!loading && !ensayo) {
+  if (!loading && ensayo === null) {
     return <div className="p-8 text-center text-muted-foreground">Ensayo no encontrado.</div>
   }
 
   const pendingCount = localChanges.size
+
+  function renderBody() {
+    if (loading) {
+      return (
+        <div className="space-y-2">
+          {SKELETON_KEYS.map((k) => <Skeleton key={k} className="h-10" />)}
+        </div>
+      )
+    }
+    if (estudiantes.length === 0) {
+      return (
+        <div className="text-center py-12 text-muted-foreground text-sm">
+          Este curso no tiene estudiantes.{' '}
+          <Link to={`/cursos/${ensayo?.cursoId}`} className="text-primary underline">
+            Agregar estudiantes
+          </Link>
+        </div>
+      )
+    }
+    return (
+      <div
+        ref={containerRef}
+        onPaste={handlePaste}
+        role="grid"
+        aria-label="Tabla de respuestas"
+        className="overflow-auto rounded-lg border bg-card focus:outline-none"
+        tabIndex={0}
+      >
+        <table className="text-xs border-collapse w-full">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className="sticky left-0 bg-muted/80 backdrop-blur-sm text-left px-3 py-2 font-semibold min-w-[180px] z-10">
+                Estudiante
+              </th>
+              {preguntas.map((p) => (
+                <th key={p.numero} className="px-1.5 py-2 font-semibold text-center min-w-[2rem]">
+                  <div>{p.numero}</div>
+                  <div className="text-[9px] font-normal text-muted-foreground opacity-70">
+                    {p.respuestaCorrecta}
+                  </div>
+                </th>
+              ))}
+              <th className="px-3 py-2 font-semibold text-center min-w-[3rem]">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {estudiantes.map((est, estIdx) => {
+              const estId = est.id ?? ''
+              const resps = preguntas.map((p) => getRespuesta(estId, p.numero))
+              const correctas = preguntas.filter((p, i) => resps[i] === p.respuestaCorrecta).length
+              const totalRespondidas = resps.filter((r) => r !== null).length
+              const pct = totalRespondidas > 0 ? Math.round((correctas / preguntas.length) * 100) : null
+
+              return (
+                <tr key={est.id} className={cn('border-b last:border-0', estIdx % 2 === 0 ? '' : 'bg-muted/20')}>
+                  <td className="sticky left-0 bg-card backdrop-blur-sm px-3 py-1.5 font-medium z-10 border-r">
+                    <span className="mr-2 text-muted-foreground">{estIdx + 1}</span>
+                    {est.nombre}
+                  </td>
+                  {preguntas.map((p) => {
+                    const resp = getRespuesta(estId, p.numero)
+                    const colorClass = cellColorClass(resp, resp === p.respuestaCorrecta)
+
+                    return (
+                      <td key={p.numero} className="p-0.5">
+                        <button
+                          className={cn(
+                            'w-full h-7 rounded border text-center font-semibold transition-colors focus:outline-none focus:ring-1 focus:ring-ring',
+                            colorClass,
+                          )}
+                          onClick={() => ciclarRespuesta(estId, p.numero)}
+                          title={`P${p.numero}: ${resp ?? 'sin respuesta'}`}
+                        >
+                          {resp === 'omitida' ? '—' : (resp ?? '')}
+                        </button>
+                      </td>
+                    )
+                  })}
+                  <td className="px-2 py-1.5 text-center font-semibold">
+                    {pct === null ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <span className={cn('text-xs', pctColorClass(pct))}>
+                        {pct}%
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -138,7 +247,7 @@ export function CorreccionPage() {
               className={cn(saved && 'bg-emerald-600 hover:bg-emerald-700')}
             >
               <Save className="h-4 w-4" />
-              {saving ? 'Guardando…' : saved ? '¡Guardado!' : `Guardar${pendingCount > 0 ? ` (${pendingCount})` : ''}`}
+              {saveButtonLabel(saving, saved, pendingCount)}
             </Button>
           </div>
         }
@@ -149,7 +258,6 @@ export function CorreccionPage() {
           <Link to="/ensayos"><ArrowLeft className="h-4 w-4" /> Ensayos</Link>
         </Button>
 
-        {/* Instrucciones de pegado */}
         <Card className="mb-4 border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 dark:border-blue-800">
           <CardContent className="p-3 flex items-center gap-2 text-xs text-blue-800 dark:text-blue-300">
             <ClipboardPaste className="h-4 w-4 shrink-0" />
@@ -161,98 +269,7 @@ export function CorreccionPage() {
           </CardContent>
         </Card>
 
-        {loading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10" />)}
-          </div>
-        ) : estudiantes.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground text-sm">
-            Este curso no tiene estudiantes. <Link to={`/cursos/${ensayo?.cursoId}`} className="text-primary underline">Agregar estudiantes</Link>
-          </div>
-        ) : (
-          <div
-            ref={containerRef}
-            onPaste={handlePaste}
-            className="overflow-auto rounded-lg border bg-card"
-            tabIndex={0}
-          >
-            <table className="text-xs border-collapse w-full">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="sticky left-0 bg-muted/80 backdrop-blur-sm text-left px-3 py-2 font-semibold min-w-[180px] z-10">
-                    Estudiante
-                  </th>
-                  {preguntas.map((p) => (
-                    <th key={p.numero} className="px-1.5 py-2 font-semibold text-center min-w-[2rem]">
-                      <div>{p.numero}</div>
-                      <div className="text-[9px] font-normal text-muted-foreground opacity-70">
-                        {p.respuestaCorrecta}
-                      </div>
-                    </th>
-                  ))}
-                  <th className="px-3 py-2 font-semibold text-center min-w-[3rem]">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {estudiantes.map((est, estIdx) => {
-                  const resps = preguntas.map((p) => getRespuesta(est.id!, p.numero))
-                  const correctas = preguntas.filter((p, i) => resps[i] === p.respuestaCorrecta).length
-                  const totalRespondidas = resps.filter((r) => r !== null).length
-                  const pct = totalRespondidas > 0 ? Math.round((correctas / preguntas.length) * 100) : null
-
-                  return (
-                    <tr key={est.id} className={cn('border-b last:border-0', estIdx % 2 === 0 ? '' : 'bg-muted/20')}>
-                      <td className="sticky left-0 bg-card backdrop-blur-sm px-3 py-1.5 font-medium z-10 border-r">
-                        <span className="mr-2 text-muted-foreground">{estIdx + 1}</span>
-                        {est.nombre}
-                      </td>
-                      {preguntas.map((p) => {
-                        const resp = getRespuesta(est.id!, p.numero)
-                        const isCorrect = resp === p.respuestaCorrecta
-                        const colorClass = !resp
-                          ? CELL_COLORS.empty
-                          : resp === 'omitida'
-                            ? CELL_COLORS.omitted
-                            : isCorrect
-                              ? CELL_COLORS.correct
-                              : CELL_COLORS.incorrect
-
-                        return (
-                          <td key={p.numero} className="p-0.5">
-                            <button
-                              className={cn(
-                                'w-full h-7 rounded border text-center font-semibold transition-colors focus:outline-none focus:ring-1 focus:ring-ring',
-                                colorClass,
-                              )}
-                              onClick={() => ciclarRespuesta(est.id!, p.numero)}
-                              title={`P${p.numero}: ${resp ?? 'sin respuesta'}`}
-                            >
-                              {resp === 'omitida' ? '—' : (resp ?? '')}
-                            </button>
-                          </td>
-                        )
-                      })}
-                      <td className="px-2 py-1.5 text-center font-semibold">
-                        {pct !== null ? (
-                          <span
-                            className={cn(
-                              'text-xs',
-                              pct >= 75 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-red-600',
-                            )}
-                          >
-                            {pct}%
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {renderBody()}
       </div>
     </div>
   )

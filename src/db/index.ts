@@ -1,9 +1,19 @@
-export { db } from './schema'
-export type { SimceDB } from './schema'
-
-// ─── Helpers de acceso ────────────────────────────────────────────────────────
-
-import { db } from './schema'
+import { useEffect, useState } from 'react'
+import {
+  collection,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  getDocs,
+  getDoc,
+  query,
+  where,
+  onSnapshot,
+  writeBatch,
+  Timestamp,
+} from 'firebase/firestore'
+import { firestore, auth } from '@/lib/firebase'
 import type {
   Curso,
   Estudiante,
@@ -12,72 +22,286 @@ import type {
   RespuestaEstudiante,
 } from '@/types'
 
-// Cursos
-export const getCursos = () => db.cursos.toArray()
-export const getCurso = (id: number) => db.cursos.get(id)
-export const addCurso = (c: Omit<Curso, 'id'>) => db.cursos.add(c)
-export const updateCurso = (id: number, c: Partial<Curso>) => db.cursos.update(id, c)
-export const deleteCurso = async (id: number) => {
-  const estudiantesIds = await db.estudiantes.where('cursoId').equals(id).primaryKeys()
-  const ensayosIds = await db.ensayos.where('cursoId').equals(id).primaryKeys()
-  await db.transaction('rw', [db.cursos, db.estudiantes, db.ensayos, db.preguntas, db.respuestas], async () => {
-    await db.estudiantes.where('cursoId').equals(id).delete()
-    for (const eid of ensayosIds) {
-      await db.preguntas.where('ensayoId').equals(Number(eid)).delete()
-      await db.respuestas.where('ensayoId').equals(Number(eid)).delete()
-    }
-    await db.ensayos.where('cursoId').equals(id).delete()
-    await db.cursos.delete(id)
-  })
-  return estudiantesIds
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function uid(): string {
+  return auth.currentUser?.uid ?? ''
 }
 
-// Estudiantes
-export const getEstudiantesByCurso = (cursoId: number) =>
-  db.estudiantes.where('cursoId').equals(cursoId).sortBy('nombre')
-export const addEstudiante = (e: Omit<Estudiante, 'id'>) => db.estudiantes.add(e)
-export const addEstudiantesEnLote = (es: Omit<Estudiante, 'id'>[]) => db.estudiantes.bulkAdd(es)
-export const updateEstudiante = (id: number, e: Partial<Estudiante>) => db.estudiantes.update(id, e)
-export const deleteEstudiante = (id: number) => db.estudiantes.delete(id)
-
-// Ensayos
-export const getEnsayosByCurso = (cursoId: number) =>
-  db.ensayos.where('cursoId').equals(cursoId).sortBy('fecha')
-export const getEnsayo = (id: number) => db.ensayos.get(id)
-export const addEnsayo = (e: Omit<Ensayo, 'id'>) => db.ensayos.add(e)
-export const updateEnsayo = (id: number, e: Partial<Ensayo>) => db.ensayos.update(id, e)
-export const deleteEnsayo = async (id: number) => {
-  await db.transaction('rw', [db.ensayos, db.preguntas, db.respuestas], async () => {
-    await db.preguntas.where('ensayoId').equals(id).delete()
-    await db.respuestas.where('ensayoId').equals(id).delete()
-    await db.ensayos.delete(id)
-  })
+function userCol(name: string) {
+  return collection(firestore, 'users', uid(), name)
 }
 
-// Preguntas
-export const getPreguntasByEnsayo = (ensayoId: number) =>
-  db.preguntas.where('ensayoId').equals(ensayoId).sortBy('numero')
-export const setPreguntasEnsayo = async (ensayoId: number, preguntas: Omit<Pregunta, 'id'>[]) => {
-  await db.transaction('rw', [db.preguntas], async () => {
-    await db.preguntas.where('ensayoId').equals(ensayoId).delete()
-    await db.preguntas.bulkAdd(preguntas)
-  })
+function userDoc(name: string, id: string) {
+  return doc(firestore, 'users', uid(), name, id)
 }
 
-// Respuestas
-export const getRespuestasByEnsayo = (ensayoId: number) =>
-  db.respuestas.where('ensayoId').equals(ensayoId).toArray()
-export const getRespuestasByEstudiante = (ensayoId: number, estudianteId: number) =>
-  db.respuestas.where({ ensayoId, estudianteId }).toArray()
-export const upsertRespuesta = async (r: Omit<RespuestaEstudiante, 'id'>) => {
-  const existing = await db.respuestas
-    .where({ ensayoId: r.ensayoId, estudianteId: r.estudianteId, numeroPregunta: r.numeroPregunta })
-    .first()
-  if (existing?.id) return db.respuestas.update(existing.id, r)
-  return db.respuestas.add(r)
+// Converts Firestore Timestamps to JS Dates recursively (top-level fields only)
+function hydrate<T extends Record<string, unknown>>(data: T): T {
+  const out = { ...data } as Record<string, unknown>
+  for (const [k, v] of Object.entries(out)) {
+    if (v instanceof Timestamp) out[k] = v.toDate()
+  }
+  return out as T
 }
+
+// ─── Real-time hooks ──────────────────────────────────────────────────────────
+
+export function useCursos(): Curso[] | undefined {
+  const [data, setData] = useState<Curso[] | undefined>(undefined)
+  useEffect(() => {
+    const u = auth.currentUser
+    if (!u) return
+    return onSnapshot(collection(firestore, 'users', u.uid, 'cursos'), (snap) =>
+      setData(
+        snap.docs
+          .map((d) => ({ ...hydrate(d.data() as Record<string, unknown>), id: d.id }) as Curso)
+          .sort((a, b) => a.nombre.localeCompare(b.nombre)),
+      ),
+    )
+  }, [])
+  return data
+}
+
+export function useCurso(id: string | undefined): Curso | null | undefined {
+  const [data, setData] = useState<Curso | null | undefined>(undefined)
+  useEffect(() => {
+    if (!id) return
+    const u = auth.currentUser
+    if (!u) return
+    return onSnapshot(doc(firestore, 'users', u.uid, 'cursos', id), (d) =>
+      setData(d.exists() ? ({ ...hydrate(d.data() as Record<string, unknown>), id: d.id } as Curso) : null),
+    )
+  }, [id])
+  return data
+}
+
+export function useEstudiantesByCurso(cursoId: string | undefined): Estudiante[] | undefined {
+  const [data, setData] = useState<Estudiante[] | undefined>(undefined)
+  useEffect(() => {
+    if (!cursoId) return
+    const u = auth.currentUser
+    if (!u) return
+    return onSnapshot(
+      query(collection(firestore, 'users', u.uid, 'estudiantes'), where('cursoId', '==', cursoId)),
+      (snap) =>
+        setData(
+          snap.docs
+            .map((d) => ({ ...hydrate(d.data() as Record<string, unknown>), id: d.id }) as Estudiante)
+            .sort((a, b) => a.nombre.localeCompare(b.nombre)),
+        ),
+    )
+  }, [cursoId])
+  return data
+}
+
+export function useEstudiantesCountByCurso(): Record<string, number> | undefined {
+  const [data, setData] = useState<Record<string, number> | undefined>(undefined)
+  useEffect(() => {
+    const u = auth.currentUser
+    if (!u) return
+    return onSnapshot(collection(firestore, 'users', u.uid, 'estudiantes'), (snap) => {
+      const map: Record<string, number> = {}
+      for (const d of snap.docs) {
+        const cursoId = (d.data() as Estudiante).cursoId
+        if (cursoId) map[cursoId] = (map[cursoId] ?? 0) + 1
+      }
+      setData(map)
+    })
+  }, [])
+  return data
+}
+
+export function useEnsayos(): Ensayo[] | undefined {
+  const [data, setData] = useState<Ensayo[] | undefined>(undefined)
+  useEffect(() => {
+    const u = auth.currentUser
+    if (!u) return
+    return onSnapshot(collection(firestore, 'users', u.uid, 'ensayos'), (snap) =>
+      setData(
+        snap.docs
+          .map((d) => ({ ...hydrate(d.data() as Record<string, unknown>), id: d.id }) as Ensayo)
+          .sort((a, b) => b.fecha.getTime() - a.fecha.getTime()),
+      ),
+    )
+  }, [])
+  return data
+}
+
+export function useEnsayo(id: string | undefined): Ensayo | null | undefined {
+  const [data, setData] = useState<Ensayo | null | undefined>(undefined)
+  useEffect(() => {
+    if (!id) return
+    const u = auth.currentUser
+    if (!u) return
+    return onSnapshot(doc(firestore, 'users', u.uid, 'ensayos', id), (d) =>
+      setData(d.exists() ? ({ ...hydrate(d.data() as Record<string, unknown>), id: d.id } as Ensayo) : null),
+    )
+  }, [id])
+  return data
+}
+
+export function usePreguntasByEnsayo(ensayoId: string | undefined): Pregunta[] | undefined {
+  const [data, setData] = useState<Pregunta[] | undefined>(undefined)
+  useEffect(() => {
+    if (!ensayoId) return
+    const u = auth.currentUser
+    if (!u) return
+    return onSnapshot(
+      query(collection(firestore, 'users', u.uid, 'preguntas'), where('ensayoId', '==', ensayoId)),
+      (snap) =>
+        setData(
+          snap.docs
+            .map((d) => ({ ...hydrate(d.data() as Record<string, unknown>), id: d.id }) as Pregunta)
+            .sort((a, b) => a.numero - b.numero),
+        ),
+    )
+  }, [ensayoId])
+  return data
+}
+
+export function useRespuestasByEnsayo(ensayoId: string | undefined): RespuestaEstudiante[] | undefined {
+  const [data, setData] = useState<RespuestaEstudiante[] | undefined>(undefined)
+  useEffect(() => {
+    if (!ensayoId) return
+    const u = auth.currentUser
+    if (!u) return
+    return onSnapshot(
+      query(collection(firestore, 'users', u.uid, 'respuestas'), where('ensayoId', '==', ensayoId)),
+      (snap) =>
+        setData(
+          snap.docs.map((d) => ({ ...hydrate(d.data() as Record<string, unknown>), id: d.id }) as RespuestaEstudiante),
+        ),
+    )
+  }, [ensayoId])
+  return data
+}
+
+// ─── Async fetch helpers (for one-shot reads like export) ─────────────────────
+
+export async function getEnsayo(id: string): Promise<Ensayo | null> {
+  const snap = await getDoc(userDoc('ensayos', id))
+  return snap.exists() ? ({ ...hydrate(snap.data() as Record<string, unknown>), id: snap.id } as Ensayo) : null
+}
+
+export async function getEstudiantesByCurso(cursoId: string): Promise<Estudiante[]> {
+  const snap = await getDocs(query(userCol('estudiantes'), where('cursoId', '==', cursoId)))
+  return snap.docs
+    .map((d) => ({ ...hydrate(d.data() as Record<string, unknown>), id: d.id }) as Estudiante)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+}
+
+export async function getPreguntasByEnsayo(ensayoId: string): Promise<Pregunta[]> {
+  const snap = await getDocs(query(userCol('preguntas'), where('ensayoId', '==', ensayoId)))
+  return snap.docs
+    .map((d) => ({ ...hydrate(d.data() as Record<string, unknown>), id: d.id }) as Pregunta)
+    .sort((a, b) => a.numero - b.numero)
+}
+
+export async function getRespuestasByEnsayo(ensayoId: string): Promise<RespuestaEstudiante[]> {
+  const snap = await getDocs(query(userCol('respuestas'), where('ensayoId', '==', ensayoId)))
+  return snap.docs.map((d) => ({ ...hydrate(d.data() as Record<string, unknown>), id: d.id }) as RespuestaEstudiante)
+}
+
+// ─── CRUD — Cursos ────────────────────────────────────────────────────────────
+
+export const addCurso = async (c: Omit<Curso, 'id'>) => {
+  const ref = await addDoc(userCol('cursos'), c)
+  return ref.id
+}
+
+export const updateCurso = async (id: string, c: Partial<Curso>) => {
+  await updateDoc(userDoc('cursos', id), c as Record<string, unknown>)
+}
+
+export const deleteCurso = async (id: string) => {
+  const u = uid()
+  const base = `users/${u}`
+  const ensayosSnap = await getDocs(query(collection(firestore, base, 'ensayos'), where('cursoId', '==', id)))
+  const estudiantesSnap = await getDocs(query(collection(firestore, base, 'estudiantes'), where('cursoId', '==', id)))
+
+  const batch = writeBatch(firestore)
+  estudiantesSnap.docs.forEach((d) => batch.delete(d.ref))
+
+  for (const e of ensayosSnap.docs) {
+    const eid = e.id
+    const pregSnap = await getDocs(query(collection(firestore, base, 'preguntas'), where('ensayoId', '==', eid)))
+    const respSnap = await getDocs(query(collection(firestore, base, 'respuestas'), where('ensayoId', '==', eid)))
+    pregSnap.docs.forEach((d) => batch.delete(d.ref))
+    respSnap.docs.forEach((d) => batch.delete(d.ref))
+    batch.delete(e.ref)
+  }
+
+  batch.delete(doc(firestore, base, 'cursos', id))
+  await batch.commit()
+}
+
+// ─── CRUD — Estudiantes ───────────────────────────────────────────────────────
+
+export const addEstudiante = async (e: Omit<Estudiante, 'id'>) => {
+  const ref = await addDoc(userCol('estudiantes'), e)
+  return ref.id
+}
+
+export const addEstudiantesEnLote = async (es: Omit<Estudiante, 'id'>[]) => {
+  const batch = writeBatch(firestore)
+  for (const e of es) {
+    batch.set(doc(userCol('estudiantes')), e)
+  }
+  await batch.commit()
+}
+
+export const deleteEstudiante = async (id: string) => {
+  await deleteDoc(userDoc('estudiantes', id))
+}
+
+// ─── CRUD — Ensayos ───────────────────────────────────────────────────────────
+
+export const addEnsayo = async (e: Omit<Ensayo, 'id'>) => {
+  const ref = await addDoc(userCol('ensayos'), e)
+  return ref.id
+}
+
+export const deleteEnsayo = async (id: string) => {
+  const u = uid()
+  const base = `users/${u}`
+  const pregSnap = await getDocs(query(collection(firestore, base, 'preguntas'), where('ensayoId', '==', id)))
+  const respSnap = await getDocs(query(collection(firestore, base, 'respuestas'), where('ensayoId', '==', id)))
+
+  const batch = writeBatch(firestore)
+  pregSnap.docs.forEach((d) => batch.delete(d.ref))
+  respSnap.docs.forEach((d) => batch.delete(d.ref))
+  batch.delete(doc(firestore, base, 'ensayos', id))
+  await batch.commit()
+}
+
+// ─── CRUD — Preguntas ─────────────────────────────────────────────────────────
+
+export const setPreguntasEnsayo = async (ensayoId: string, preguntas: Omit<Pregunta, 'id'>[]) => {
+  const u = uid()
+  const base = `users/${u}`
+  const existing = await getDocs(query(collection(firestore, base, 'preguntas'), where('ensayoId', '==', ensayoId)))
+
+  const batch = writeBatch(firestore)
+  existing.docs.forEach((d) => batch.delete(d.ref))
+  for (const p of preguntas) {
+    batch.set(doc(collection(firestore, base, 'preguntas')), p)
+  }
+  await batch.commit()
+}
+
+// ─── CRUD — Respuestas ────────────────────────────────────────────────────────
+
 export const bulkUpsertRespuestas = async (rs: Omit<RespuestaEstudiante, 'id'>[]) => {
-  await db.transaction('rw', [db.respuestas], async () => {
-    for (const r of rs) await upsertRespuesta(r)
-  })
+  const u = uid()
+  const base = `users/${u}`
+  const CHUNK = 450
+  for (let i = 0; i < rs.length; i += CHUNK) {
+    const batch = writeBatch(firestore)
+    for (const r of rs.slice(i, i + CHUNK)) {
+      const docId = `${r.ensayoId}_${r.estudianteId}_${r.numeroPregunta}`
+      batch.set(doc(firestore, base, 'respuestas', docId), r)
+    }
+    await batch.commit()
+  }
 }

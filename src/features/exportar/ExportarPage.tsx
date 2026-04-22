@@ -1,4 +1,3 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { FileSpreadsheet, FileText, Download, Loader2 } from 'lucide-react'
 import { Topbar } from '@/components/layout/Topbar'
@@ -8,34 +7,39 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { db } from '@/db'
+import {
+  useEnsayos,
+  useCursos,
+  getEnsayo,
+  getEstudiantesByCurso,
+  getPreguntasByEnsayo,
+  getRespuestasByEnsayo,
+} from '@/db'
 import { calcularResumenCurso } from '@/lib/calculos'
 import { useConfigStore } from '@/store'
 import * as XLSX from 'xlsx'
 
 export function ExportarPage() {
-  const ensayos = useLiveQuery(() => db.ensayos.orderBy('fecha').reverse().toArray())
-  const cursos = useLiveQuery(() => db.cursos.toArray())
+  const ensayos = useEnsayos()
+  const cursos = useCursos()
   const { umbrales } = useConfigStore()
   const [ensayoId, setEnsayoId] = useState<string>('')
   const [loadingXlsx, setLoadingXlsx] = useState(false)
   const [loadingPdf, setLoadingPdf] = useState(false)
 
-  const cursoMap = Object.fromEntries((cursos ?? []).map((c) => [c.id!, c.nombre]))
+  const cursoMap = Object.fromEntries((cursos ?? []).map((c) => [c.id ?? '', c.nombre]))
 
   const handleExportXlsx = async () => {
     if (!ensayoId) return
     setLoadingXlsx(true)
-    const id = parseInt(ensayoId)
-    const ensayo = await db.ensayos.get(id)
+    const ensayo = await getEnsayo(ensayoId)
     if (!ensayo) { setLoadingXlsx(false); return }
 
-    const estudiantes = await db.estudiantes.where('cursoId').equals(ensayo.cursoId).sortBy('nombre')
-    const preguntas = await db.preguntas.where('ensayoId').equals(id).sortBy('numero')
-    const respuestas = await db.respuestas.where('ensayoId').equals(id).toArray()
-    const resumen = calcularResumenCurso(id, estudiantes, preguntas, respuestas, umbrales)
+    const estudiantes = await getEstudiantesByCurso(ensayo.cursoId)
+    const preguntas = await getPreguntasByEnsayo(ensayoId)
+    const respuestas = await getRespuestasByEnsayo(ensayoId)
+    const resumen = calcularResumenCurso(ensayoId, estudiantes, preguntas, respuestas, umbrales)
 
-    // Hoja 1: Resultados por estudiante
     const wsData1 = [
       ['Estudiante', '% Logro', 'Correctas', 'Total', 'Nivel', ...preguntas.map((p) => `P${p.numero}`)],
       ...resumen.resultadosEstudiantes.map((r) => [
@@ -49,7 +53,6 @@ export function ExportarPage() {
     ]
     const ws1 = XLSX.utils.aoa_to_sheet(wsData1)
 
-    // Hoja 2: Resultados por pregunta
     const wsData2 = [
       ['N° Pregunta', 'OA', 'Eje', 'Habilidad', 'Clave', '% Logro', 'Correctas', 'Total'],
       ...preguntas.map((p) => {
@@ -59,7 +62,6 @@ export function ExportarPage() {
     ]
     const ws2 = XLSX.utils.aoa_to_sheet(wsData2)
 
-    // Hoja 3: Resultados por eje
     const wsData3 = [
       ['Eje', '% Logro', 'Correctas', 'Total'],
       ...resumen.resultadosPorEje.map((e) => [e.eje, e.porcentaje, e.correctas, e.total]),
@@ -70,14 +72,13 @@ export function ExportarPage() {
     XLSX.utils.book_append_sheet(wb, ws1, 'Estudiantes')
     XLSX.utils.book_append_sheet(wb, ws2, 'Preguntas')
     XLSX.utils.book_append_sheet(wb, ws3, 'Ejes')
-    XLSX.writeFile(wb, `${ensayo.nombre.replace(/\s+/g, '_')}_resultados.xlsx`)
+    XLSX.writeFile(wb, `${ensayo.nombre.replaceAll(/\s+/g, '_')}_resultados.xlsx`)
     setLoadingXlsx(false)
   }
 
   const handleExportPdf = async () => {
     if (!ensayoId) return
     setLoadingPdf(true)
-    // Navegamos al dashboard y disparamos impresión
     window.open(`/resultados/${ensayoId}?print=1`, '_blank')
     setLoadingPdf(false)
   }
@@ -94,7 +95,7 @@ export function ExportarPage() {
             </SelectTrigger>
             <SelectContent>
               {ensayos?.map((e) => (
-                <SelectItem key={e.id} value={e.id!.toString()}>
+                <SelectItem key={e.id} value={e.id ?? ''}>
                   {e.nombre} — {cursoMap[e.cursoId] ?? ''}
                 </SelectItem>
               ))}

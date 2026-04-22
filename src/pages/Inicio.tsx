@@ -1,4 +1,3 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { BookOpen, Users, PenLine, BarChart3, TrendingUp, AlertTriangle } from 'lucide-react'
 import { Topbar } from '@/components/layout/Topbar'
@@ -6,23 +5,28 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { db } from '@/db'
+import { useCursos, useEnsayos, useEstudiantesCountByCurso } from '@/db'
 import { formatFecha } from '@/lib/utils'
 
+const SKELETON_KEYS = ['a', 'b', 'c']
+
 export function Inicio() {
-  const cursos = useLiveQuery(() => db.cursos.toArray())
-  const ensayos = useLiveQuery(() => db.ensayos.orderBy('fecha').reverse().limit(5).toArray())
-  const totalEstudiantes = useLiveQuery(() => db.estudiantes.count())
-  const totalEnsayos = useLiveQuery(() => db.ensayos.count())
+  const cursos = useCursos()
+  const ensayos = useEnsayos()
+  const estudiantesCount = useEstudiantesCountByCurso()
 
   const loading = cursos === undefined
+
+  const totalEstudiantes = estudiantesCount
+    ? Object.values(estudiantesCount).reduce((a, b) => a + b, 0)
+    : 0
+  const recentEnsayos = (ensayos ?? []).slice(0, 5)
 
   return (
     <div>
       <Topbar title="Inicio" subtitle="Resumen general del colegio" />
 
       <div className="p-6 space-y-6 max-w-5xl">
-        {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             {
@@ -34,14 +38,14 @@ export function Inicio() {
             },
             {
               label: 'Estudiantes',
-              value: totalEstudiantes ?? 0,
+              value: totalEstudiantes,
               icon: Users,
               color: 'text-violet-600',
               bg: 'bg-violet-50 dark:bg-violet-950/30',
             },
             {
               label: 'Ensayos',
-              value: totalEnsayos ?? 0,
+              value: ensayos?.length ?? 0,
               icon: BookOpen,
               color: 'text-emerald-600',
               bg: 'bg-emerald-50 dark:bg-emerald-950/30',
@@ -73,7 +77,6 @@ export function Inicio() {
         </div>
 
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* Ensayos recientes */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
@@ -82,15 +85,15 @@ export function Inicio() {
             </CardHeader>
             <CardContent className="space-y-2">
               {loading ? (
-                Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12" />)
-              ) : ensayos?.length === 0 ? (
+                SKELETON_KEYS.map((k) => <Skeleton key={k} className="h-12" />)
+              ) : recentEnsayos.length === 0 ? (
                 <EmptyState
                   icon={BookOpen}
                   message="Aún no hay ensayos creados"
                   action={<Button asChild size="sm"><Link to="/ensayos">Crear ensayo</Link></Button>}
                 />
               ) : (
-                ensayos?.map((e) => (
+                recentEnsayos.map((e) => (
                   <Link
                     key={e.id}
                     to={`/resultados/${e.id}`}
@@ -107,7 +110,6 @@ export function Inicio() {
             </CardContent>
           </Card>
 
-          {/* Accesos rápidos */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
@@ -132,8 +134,7 @@ export function Inicio() {
           </Card>
         </div>
 
-        {/* Aviso si no hay datos */}
-        {!loading && cursos?.length === 0 && (
+        {!loading && (cursos?.length ?? 0) === 0 && (
           <Card className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-800">
             <CardContent className="p-4 flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />

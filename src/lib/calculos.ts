@@ -134,7 +134,7 @@ export function calcularResultadosPorEje(
 }
 
 export function calcularResumenCurso(
-  ensayoId: number,
+  ensayoId: string,
   estudiantes: Estudiante[],
   preguntas: Pregunta[],
   todasRespuestas: RespuestaEstudiante[],
@@ -194,8 +194,8 @@ export function ejesParaReforzar(resumen: ResumenCurso, umbral = 60): ResultadoE
 }
 
 export function estudiantesEnRiesgo(
-  historiales: Array<{ estudianteId: number; nombre: string; nivel: NivelDesempeno }[]>,
-): Array<{ estudianteId: number; nombre: string }> {
+  historiales: Array<{ estudianteId: string; nombre: string; nivel: NivelDesempeno }[]>,
+): Array<{ estudianteId: string; nombre: string }> {
   if (historiales.length < 2) return []
   const ultimo = historiales[historiales.length - 1]
   const penultimo = historiales[historiales.length - 2]

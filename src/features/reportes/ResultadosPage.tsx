@@ -1,4 +1,3 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useParams, Link } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { ArrowLeft, Download, Copy, CheckCheck } from 'lucide-react'
@@ -12,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { db } from '@/db'
+import { useEnsayo, useCurso, useEstudiantesByCurso, usePreguntasByEnsayo, useRespuestasByEnsayo } from '@/db'
 import {
   calcularResumenCurso,
   generarResumenEjecutivo,
@@ -32,45 +31,38 @@ const PIE_COLORS = {
   Insuficiente: '#ef4444',
 }
 
+function barColor(pct: number): string {
+  if (pct >= 75) return '#10b981'
+  if (pct >= 50) return '#f59e0b'
+  return '#ef4444'
+}
+
 export function ResultadosPage() {
-  const { ensayoId: paramId } = useParams<{ ensayoId: string }>()
-  const ensayoId = parseInt(paramId ?? '0')
+  const { ensayoId } = useParams<{ ensayoId: string }>()
   const { umbrales } = useConfigStore()
   const [copied, setCopied] = useState(false)
 
-  const ensayo = useLiveQuery(() => db.ensayos.get(ensayoId), [ensayoId])
-  const curso = useLiveQuery(
-    () => ensayo ? db.cursos.get(ensayo.cursoId) : undefined,
-    [ensayo],
-  )
-  const estudiantes = useLiveQuery(
-    () => ensayo ? db.estudiantes.where('cursoId').equals(ensayo.cursoId).sortBy('nombre') : [],
-    [ensayo],
-  )
-  const preguntas = useLiveQuery(
-    () => db.preguntas.where('ensayoId').equals(ensayoId).sortBy('numero'),
-    [ensayoId],
-  )
-  const respuestas = useLiveQuery(
-    () => db.respuestas.where('ensayoId').equals(ensayoId).toArray(),
-    [ensayoId],
-  )
+  const ensayo = useEnsayo(ensayoId)
+  const curso = useCurso(ensayo?.cursoId)
+  const estudiantes = useEstudiantesByCurso(ensayo?.cursoId)
+  const preguntas = usePreguntasByEnsayo(ensayoId)
+  const respuestas = useRespuestasByEnsayo(ensayoId)
 
   const resumen = useMemo(() => {
-    if (!estudiantes?.length || !preguntas?.length || !respuestas) return null
+    if (!ensayoId || !estudiantes?.length || !preguntas?.length || !respuestas) return null
     return calcularResumenCurso(ensayoId, estudiantes, preguntas, respuestas, umbrales)
   }, [estudiantes, preguntas, respuestas, ensayoId, umbrales])
 
   const loading = !ensayo || !estudiantes || !preguntas || !respuestas
 
-  if (!paramId) return <SeleccionEnsayoResultados />
+  if (!ensayoId) return <SeleccionEnsayoResultados />
 
   if (loading) {
     return (
       <div className="p-6 space-y-4">
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
+          {['a', 'b', 'c', 'd'].map((k) => <Skeleton key={k} className="h-24" />)}
         </div>
       </div>
     )
@@ -142,7 +134,6 @@ export function ResultadosPage() {
           <Link to="/resultados"><ArrowLeft className="h-4 w-4" /> Resultados</Link>
         </Button>
 
-        {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KPICard label="Promedio curso" value={`${resumen.promedio}%`} sub={`${resumen.totalEvaluados} evaluados`} />
           <KPICard label="Adecuado" value={`${resumen.porcentajeAdecuado}%`} sub={`${resumen.distribucion.Adecuado} estudiantes`} color="emerald" />
@@ -160,7 +151,6 @@ export function ResultadosPage() {
 
           <TabsContent value="graficos" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
-              {/* Torta distribución */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm">Distribución por nivel de desempeño</CardTitle>
@@ -188,7 +178,6 @@ export function ResultadosPage() {
                 </CardContent>
               </Card>
 
-              {/* Barras por eje */}
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm">% logro por eje OA</CardTitle>
@@ -205,10 +194,7 @@ export function ResultadosPage() {
                       />
                       <Bar dataKey="porcentaje" radius={[0, 4, 4, 0]}>
                         {ejeData.map((entry) => (
-                          <Cell
-                            key={entry.name}
-                            fill={entry.porcentaje >= 75 ? '#10b981' : entry.porcentaje >= 50 ? '#f59e0b' : '#ef4444'}
-                          />
+                          <Cell key={entry.name} fill={barColor(entry.porcentaje)} />
                         ))}
                       </Bar>
                     </BarChart>
@@ -217,7 +203,6 @@ export function ResultadosPage() {
               </Card>
             </div>
 
-            {/* Barras por pregunta */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">% logro por pregunta (ordenado de menor a mayor)</CardTitle>
@@ -234,10 +219,7 @@ export function ResultadosPage() {
                     />
                     <Bar dataKey="porcentaje" radius={[3, 3, 0, 0]}>
                       {preguntaData.map((entry) => (
-                        <Cell
-                          key={entry.name}
-                          fill={entry.porcentaje >= 75 ? '#10b981' : entry.porcentaje >= 50 ? '#f59e0b' : '#ef4444'}
-                        />
+                        <Cell key={entry.name} fill={barColor(entry.porcentaje)} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -245,7 +227,6 @@ export function ResultadosPage() {
               </CardContent>
             </Card>
 
-            {/* Ranking */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Ranking de estudiantes (top 15)</CardTitle>
@@ -259,10 +240,7 @@ export function ResultadosPage() {
                     <Tooltip formatter={(v) => [`${v}%`, 'Logro']} />
                     <Bar dataKey="porcentaje" radius={[0, 4, 4, 0]}>
                       {rankingData.map((entry) => (
-                        <Cell
-                          key={entry.nombre}
-                          fill={entry.porcentaje >= 75 ? '#10b981' : entry.porcentaje >= 50 ? '#f59e0b' : '#ef4444'}
-                        />
+                        <Cell key={entry.estudianteId} fill={barColor(entry.porcentaje)} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -283,7 +261,6 @@ export function ResultadosPage() {
           </TabsContent>
 
           <TabsContent value="pedagogico" className="space-y-4">
-            {/* OAs con menor logro */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">5 OA con menor logro</CardTitle>
@@ -314,7 +291,6 @@ export function ResultadosPage() {
               </CardContent>
             </Card>
 
-            {/* Ejes para reforzar */}
             {ejesBajos.length > 0 && (
               <Card className="border-amber-200 bg-amber-50/50 dark:bg-amber-950/20">
                 <CardHeader className="pb-2">
@@ -334,7 +310,6 @@ export function ResultadosPage() {
               </Card>
             )}
 
-            {/* Resumen ejecutivo */}
             <Card>
               <CardHeader className="pb-2 flex-row items-center justify-between">
                 <CardTitle className="text-sm">Resumen ejecutivo</CardTitle>

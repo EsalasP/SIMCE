@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { Check, ChevronRight, ChevronLeft, BookOpen, AlertCircle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Topbar } from '@/components/layout/Topbar'
@@ -11,7 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
-import { db, addEnsayo, setPreguntasEnsayo } from '@/db'
+import { useCursos, addEnsayo, setPreguntasEnsayo } from '@/db'
 import type { Nivel, Asignatura, Eje, Habilidad, Respuesta } from '@/types'
 import { EJES, EJES_LECTURA } from '@/lib/calculos'
 import { cn } from '@/lib/utils'
@@ -45,9 +44,7 @@ function defaultPregunta(i: number, asignatura: Asignatura): PreguntaConfig {
 
 export function NuevoEnsayoWizard() {
   const navigate = useNavigate()
-  const cursos = useLiveQuery(() =>
-    db.cursos.toArray().then((arr) => arr.sort((a, b) => a.nombre.localeCompare(b.nombre))),
-  )
+  const cursos = useCursos()
 
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -59,7 +56,7 @@ export function NuevoEnsayoWizard() {
   const [asignatura, setAsignatura] = useState<Asignatura>('Matemática')
   const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
   const [numPreguntas, setNumPreguntas] = useState(30)
-  const [cursoId, setCursoId] = useState<number | null>(null)
+  const [cursoId, setCursoId] = useState<string | null>(null)
 
   // Pasos 2 y 3
   const [preguntas, setPreguntas] = useState<PreguntaConfig[]>(() =>
@@ -122,12 +119,11 @@ export function NuevoEnsayoWizard() {
         cursoId,
         creadoEn: new Date(),
       })
-      const ensayoId = Number(id)
       await setPreguntasEnsayo(
-        ensayoId,
-        preguntas.map((p) => ({ ...p, ensayoId })),
+        id,
+        preguntas.map((p) => ({ ...p, ensayoId: id })),
       )
-      navigate(`/correccion/${ensayoId}`)
+      navigate(`/correccion/${id}`)
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Error al guardar el ensayo. Intenta nuevamente.')
       setSaving(false)
@@ -197,7 +193,7 @@ export function NuevoEnsayoWizard() {
                       <Label>Curso *</Label>
                       <Select
                         value={cursoId?.toString() ?? ''}
-                        onValueChange={(v) => setCursoId(parseInt(v))}
+                        onValueChange={(v) => setCursoId(v)}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Seleccionar curso…" />

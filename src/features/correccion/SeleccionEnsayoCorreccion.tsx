@@ -1,16 +1,15 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { PenLine } from 'lucide-react'
 import { Topbar } from '@/components/layout/Topbar'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { db } from '@/db'
+import { useEnsayos, useCursos } from '@/db'
 import { formatFecha } from '@/lib/utils'
 
 export function SeleccionEnsayoCorreccion() {
-  const ensayos = useLiveQuery(() => db.ensayos.orderBy('fecha').reverse().toArray())
-  const cursos = useLiveQuery(() => db.cursos.toArray())
+  const ensayos = useEnsayos()
+  const cursos = useCursos()
   const cursoMap = Object.fromEntries((cursos ?? []).map((c) => [c.id!, c.nombre]))
 
   const loading = ensayos === undefined

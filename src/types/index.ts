@@ -40,7 +40,7 @@ export type NivelDesempeno = 'Adecuado' | 'Elemental' | 'Insuficiente'
 // ─── Modelos de base de datos ─────────────────────────────────────────────────
 
 export interface Curso {
-  id?: number
+  id?: string
   nombre: string
   nivel: Nivel
   anio: number
@@ -48,27 +48,27 @@ export interface Curso {
 }
 
 export interface Estudiante {
-  id?: number
-  cursoId: number
+  id?: string
+  cursoId: string
   nombre: string
   rut?: string
   creadoEn: Date
 }
 
 export interface Ensayo {
-  id?: number
+  id?: string
   nombre: string
   nivel: Nivel
   asignatura: Asignatura
   fecha: Date
   numPreguntas: number
-  cursoId: number
+  cursoId: string
   creadoEn: Date
 }
 
 export interface Pregunta {
-  id?: number
-  ensayoId: number
+  id?: string
+  ensayoId: string
   numero: number
   respuestaCorrecta: Exclude<Respuesta, 'omitida'>
   eje: Eje
@@ -77,9 +77,9 @@ export interface Pregunta {
 }
 
 export interface RespuestaEstudiante {
-  id?: number
-  ensayoId: number
-  estudianteId: number
+  id?: string
+  ensayoId: string
+  estudianteId: string
   numeroPregunta: number
   respuesta: Respuesta
 }
@@ -87,14 +87,14 @@ export interface RespuestaEstudiante {
 // ─── Umbrales de desempeño ────────────────────────────────────────────────────
 
 export interface UmbralesDesempeno {
-  adecuado: number   // porcentaje mínimo para Adecuado (ej. 75)
-  elemental: number  // porcentaje mínimo para Elemental (ej. 50)
+  adecuado: number
+  elemental: number
 }
 
 // ─── Resultados calculados ────────────────────────────────────────────────────
 
 export interface ResultadoEstudiante {
-  estudianteId: number
+  estudianteId: string
   nombre: string
   correctas: number
   total: number
@@ -122,7 +122,7 @@ export interface ResultadoEje {
 }
 
 export interface ResumenCurso {
-  ensayoId: number
+  ensayoId: string
   totalEvaluados: number
   promedio: number
   distribucion: Record<NivelDesempeno, number>

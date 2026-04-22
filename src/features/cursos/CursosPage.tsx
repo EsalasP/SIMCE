@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { Plus, Pencil, Trash2, Users, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Topbar } from '@/components/layout/Topbar'
@@ -14,7 +13,7 @@ import { Label } from '@/components/ui/label'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { db, addCurso, updateCurso, deleteCurso } from '@/db'
+import { useCursos, useEstudiantesCountByCurso, addCurso, updateCurso, deleteCurso } from '@/db'
 import type { Curso, Nivel } from '@/types'
 
 const NIVELES: Nivel[] = ['4°', '6°', '8°', 'II°']
@@ -26,18 +25,11 @@ const NIVEL_COLOR: Record<Nivel, string> = {
   'II°': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
 }
 
+const SKELETON_KEYS = ['a', 'b', 'c', 'd', 'e', 'f']
+
 export function CursosPage() {
-  const cursos = useLiveQuery(() =>
-    db.cursos.toArray().then((arr) => arr.sort((a, b) => a.nombre.localeCompare(b.nombre))),
-  )
-  const estudiantesCount = useLiveQuery(async () => {
-    const all = await db.estudiantes.toArray()
-    const map: Record<number, number> = {}
-    for (const e of all) {
-      if (e.cursoId) map[e.cursoId] = (map[e.cursoId] ?? 0) + 1
-    }
-    return map
-  })
+  const cursos = useCursos()
+  const estudiantesCount = useEstudiantesCountByCurso()
 
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Curso | null>(null)
@@ -65,14 +57,13 @@ export function CursosPage() {
     setSaving(true)
     setErrorMsg(null)
     try {
-      if (editing?.id != null) {
+      if (editing?.id) {
         await updateCurso(editing.id, { nombre: form.nombre.trim(), nivel: form.nivel, anio: form.anio })
       } else {
         await addCurso({ nombre: form.nombre.trim(), nivel: form.nivel, anio: form.anio, creadoEn: new Date() })
       }
       setOpen(false)
     } catch (err) {
-      console.error('Error al guardar curso:', err)
       setErrorMsg(err instanceof Error ? err.message : 'Error al guardar. Intenta nuevamente.')
     } finally {
       setSaving(false)
@@ -91,6 +82,67 @@ export function CursosPage() {
 
   const loading = cursos === undefined
 
+  function renderContent() {
+    if (loading) {
+      return (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {SKELETON_KEYS.map((k) => <Skeleton key={k} className="h-28 rounded-xl" />)}
+        </div>
+      )
+    }
+    if (cursos.length === 0) {
+      return <EmptyCursos onNew={openNew} />
+    }
+    return (
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {cursos.map((c) => (
+          <Card key={c.id} className="hover:shadow-md transition-shadow">
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="rounded-lg bg-primary/10 p-2">
+                    <Users className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm leading-tight">{c.nombre}</p>
+                    <p className="text-xs text-muted-foreground">{c.anio}</p>
+                  </div>
+                </div>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${NIVEL_COLOR[c.nivel]}`}>
+                  {c.nivel}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  {estudiantesCount?.[c.id ?? ''] ?? 0} estudiantes
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(c)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-destructive hover:text-destructive"
+                    onClick={() => setDeleteTarget(c)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
+                    <Link to={`/cursos/${c.id}`}>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div>
       <Topbar
@@ -104,60 +156,7 @@ export function CursosPage() {
       />
 
       <div className="p-6 max-w-4xl">
-        {loading ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
-          </div>
-        ) : cursos.length === 0 ? (
-          <EmptyCursos onNew={openNew} />
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {cursos.map((c) => (
-              <Card key={c.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="rounded-lg bg-primary/10 p-2">
-                        <Users className="h-4 w-4 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-sm leading-tight">{c.nombre}</p>
-                        <p className="text-xs text-muted-foreground">{c.anio}</p>
-                      </div>
-                    </div>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${NIVEL_COLOR[c.nivel]}`}>
-                      {c.nivel}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      {estudiantesCount?.[c.id!] ?? 0} estudiantes
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(c)}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive hover:text-destructive"
-                        onClick={() => setDeleteTarget(c)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-                        <Link to={`/cursos/${c.id}`}>
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        </Link>
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+        {renderContent()}
       </div>
 
       {/* Modal crear/editar */}
@@ -165,7 +164,6 @@ export function CursosPage() {
         <DialogContent
           className="max-w-sm"
           onPointerDownOutside={(e) => {
-            // Evita cerrar el dialog cuando el usuario hace clic en el dropdown del Select
             if ((e.target as Element)?.closest?.('[data-radix-popper-content-wrapper]')) {
               e.preventDefault()
             }
