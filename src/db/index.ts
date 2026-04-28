@@ -5,6 +5,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  setDoc,
   getDocs,
   getDoc,
   query,
@@ -304,4 +305,35 @@ export const bulkUpsertRespuestas = async (rs: Omit<RespuestaEstudiante, 'id'>[]
     }
     await batch.commit()
   }
+}
+
+// ─── Ausencias ────────────────────────────────────────────────────────────────
+
+export function useAusenciasByEnsayo(ensayoId: string | undefined): Set<string> {
+  const [data, setData] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    if (!ensayoId) return
+    const u = auth.currentUser
+    if (!u) return
+    return onSnapshot(
+      query(collection(firestore, 'users', u.uid, 'ausencias'), where('ensayoId', '==', ensayoId)),
+      (snap) => setData(new Set(snap.docs.map((d) => (d.data() as { estudianteId: string }).estudianteId))),
+    )
+  }, [ensayoId])
+  return data
+}
+
+export const toggleAusencia = async (ensayoId: string, estudianteId: string, marcarAusente: boolean) => {
+  const u = uid()
+  const docId = `${ensayoId}_${estudianteId}`
+  if (marcarAusente) {
+    await setDoc(doc(firestore, 'users', u, 'ausencias', docId), { ensayoId, estudianteId })
+  } else {
+    await deleteDoc(doc(firestore, 'users', u, 'ausencias', docId))
+  }
+}
+
+export const getAusenciasByEnsayo = async (ensayoId: string): Promise<Set<string>> => {
+  const snap = await getDocs(query(userCol('ausencias'), where('ensayoId', '==', ensayoId)))
+  return new Set(snap.docs.map((d) => (d.data() as { estudianteId: string }).estudianteId))
 }

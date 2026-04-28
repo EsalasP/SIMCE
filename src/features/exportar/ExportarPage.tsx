@@ -14,6 +14,7 @@ import {
   getEstudiantesByCurso,
   getPreguntasByEnsayo,
   getRespuestasByEnsayo,
+  getAusenciasByEnsayo,
 } from '@/db'
 import { calcularResumenCurso } from '@/lib/calculos'
 import { useConfigStore } from '@/store'
@@ -35,10 +36,13 @@ export function ExportarPage() {
     const ensayo = await getEnsayo(ensayoId)
     if (!ensayo) { setLoadingXlsx(false); return }
 
-    const estudiantes = await getEstudiantesByCurso(ensayo.cursoId)
-    const preguntas = await getPreguntasByEnsayo(ensayoId)
-    const respuestas = await getRespuestasByEnsayo(ensayoId)
-    const resumen = calcularResumenCurso(ensayoId, estudiantes, preguntas, respuestas, umbrales)
+    const [estudiantes, preguntas, respuestas, ausentes] = await Promise.all([
+      getEstudiantesByCurso(ensayo.cursoId),
+      getPreguntasByEnsayo(ensayoId),
+      getRespuestasByEnsayo(ensayoId),
+      getAusenciasByEnsayo(ensayoId),
+    ])
+    const resumen = calcularResumenCurso(ensayoId, estudiantes, preguntas, respuestas, umbrales, ausentes)
 
     const wsData1 = [
       ['Estudiante', '% Logro', 'Correctas', 'Total', 'Nivel', ...preguntas.map((p) => `P${p.numero}`)],

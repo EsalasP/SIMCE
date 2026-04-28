@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useEnsayo, useCurso, useEstudiantesByCurso, usePreguntasByEnsayo, useRespuestasByEnsayo } from '@/db'
+import { useEnsayo, useCurso, useEstudiantesByCurso, usePreguntasByEnsayo, useRespuestasByEnsayo, useAusenciasByEnsayo } from '@/db'
 import {
   calcularResumenCurso,
   generarResumenEjecutivo,
@@ -47,11 +47,12 @@ export function ResultadosPage() {
   const estudiantes = useEstudiantesByCurso(ensayo?.cursoId)
   const preguntas = usePreguntasByEnsayo(ensayoId)
   const respuestas = useRespuestasByEnsayo(ensayoId)
+  const ausentes = useAusenciasByEnsayo(ensayoId)
 
   const resumen = useMemo(() => {
     if (!ensayoId || !estudiantes?.length || !preguntas?.length || !respuestas) return null
-    return calcularResumenCurso(ensayoId, estudiantes, preguntas, respuestas, umbrales)
-  }, [estudiantes, preguntas, respuestas, ensayoId, umbrales])
+    return calcularResumenCurso(ensayoId, estudiantes, preguntas, respuestas, umbrales, ausentes)
+  }, [estudiantes, preguntas, respuestas, ensayoId, umbrales, ausentes])
 
   const loading = !ensayo || !estudiantes || !preguntas || !respuestas
 

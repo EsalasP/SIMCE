@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom'
 import { useState, useCallback, useRef } from 'react'
-import { ArrowLeft, ClipboardPaste, Save, BarChart3 } from 'lucide-react'
+import { ArrowLeft, ClipboardPaste, Save, BarChart3, UserX } from 'lucide-react'
 import { Topbar } from '@/components/layout/Topbar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -11,7 +11,9 @@ import {
   useEstudiantesByCurso,
   usePreguntasByEnsayo,
   useRespuestasByEnsayo,
+  useAusenciasByEnsayo,
   bulkUpsertRespuestas,
+  toggleAusencia,
 } from '@/db'
 import { cn, parsePasteData, normalizarRespuesta, formatFecha } from '@/lib/utils'
 import type { Pregunta, Respuesta } from '@/types'
@@ -137,6 +139,7 @@ export function CorreccionPage() {
   const estudiantes = useEstudiantesByCurso(ensayo?.cursoId)
   const preguntas = usePreguntasByEnsayo(ensayoId)
   const respuestasDB = useRespuestasByEnsayo(ensayoId)
+  const ausentes = useAusenciasByEnsayo(ensayoId)
 
   // Map<`${estudianteId}-${numPregunta}`, Respuesta | number>
   const [localChanges, setLocalChanges] = useState<Map<string, EntradaLocal>>(new Map())
@@ -296,15 +299,19 @@ export function CorreccionPage() {
                 </th>
               ))}
               <th className="px-3 py-2 font-semibold text-center min-w-[3rem]">%</th>
+              <th className="px-2 py-2 font-semibold text-center min-w-[2.5rem]" title="No Rinde">NR</th>
             </tr>
           </thead>
           <tbody>
             {estudiantes.map((est, estIdx) => {
               const estId = est.id ?? ''
-              const pct = calcPct(estId)
+              const esAusente = ausentes.has(estId)
+              const pct = esAusente ? null : calcPct(estId)
+              let rowBg = estIdx % 2 === 0 ? '' : 'bg-muted/20'
+              if (esAusente) rowBg = 'opacity-40'
 
               return (
-                <tr key={est.id} className={cn('border-b last:border-0', estIdx % 2 === 0 ? '' : 'bg-muted/20')}>
+                <tr key={est.id} className={cn('border-b last:border-0', rowBg)}>
                   <td className="sticky left-0 bg-card backdrop-blur-sm px-3 py-1.5 font-medium z-10 border-r">
                     <span className="mr-2 text-muted-foreground">{estIdx + 1}</span>
                     {est.nombre}
@@ -346,6 +353,20 @@ export function CorreccionPage() {
                         {pct}%
                       </span>
                     )}
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
+                    <button
+                      title={esAusente ? 'Marcar como presente' : 'Marcar como No Rinde'}
+                      onClick={() => ensayoId && toggleAusencia(ensayoId, estId, !esAusente)}
+                      className={cn(
+                        'rounded p-1 transition-colors focus:outline-none focus:ring-1 focus:ring-ring',
+                        esAusente
+                          ? 'text-red-500 bg-red-100 dark:bg-red-900/40 hover:bg-red-200'
+                          : 'text-muted-foreground hover:bg-accent/50',
+                      )}
+                    >
+                      <UserX className="h-3.5 w-3.5" />
+                    </button>
                   </td>
                 </tr>
               )

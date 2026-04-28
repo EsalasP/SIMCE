@@ -164,8 +164,10 @@ export function calcularResumenCurso(
   preguntas: Pregunta[],
   todasRespuestas: RespuestaEstudiante[],
   umbrales: UmbralesDesempeno = UMBRALES_DEFAULT,
+  ausentes: Set<string> = new Set(),
 ): ResumenCurso {
-  const resultadosEstudiantes = estudiantes.map((est) => {
+  const estudiantesPresentes = estudiantes.filter((e) => !ausentes.has(e.id ?? ''))
+  const resultadosEstudiantes = estudiantesPresentes.map((est) => {
     const resps = todasRespuestas.filter((r) => r.estudianteId === est.id)
     return calcularResultadoEstudiante(est, preguntas, resps, umbrales)
   })
