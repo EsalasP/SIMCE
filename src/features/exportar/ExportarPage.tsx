@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { FileSpreadsheet, FileText, Download, Loader2 } from 'lucide-react'
 import { Topbar } from '@/components/layout/Topbar'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -19,16 +20,28 @@ import {
 import { calcularResumenCurso } from '@/lib/calculos'
 import { useConfigStore } from '@/store'
 import * as XLSX from 'xlsx'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
+import { ReporteTemplate } from './ReporteTemplate'
+import type { Ensayo, Curso, ResumenCurso } from '@/types'
+
+interface ReporteData {
+  ensayo: Ensayo
+  curso: Curso | null
+  resumen: ResumenCurso
+}
 
 export function ExportarPage() {
   const ensayos = useEnsayos()
   const cursos = useCursos()
-  const { umbrales } = useConfigStore()
+  const { umbrales, config } = useConfigStore()
   const [ensayoId, setEnsayoId] = useState<string>('')
   const [loadingXlsx, setLoadingXlsx] = useState(false)
   const [loadingPdf, setLoadingPdf] = useState(false)
+  const [reporteData, setReporteData] = useState<ReporteData | null>(null)
+  const reporteRef = useRef<HTMLDivElement>(null)
 
-  const cursoMap = Object.fromEntries((cursos ?? []).map((c) => [c.id ?? '', c.nombre]))
+  const cursoMap = Object.fromEntries((cursos ?? []).map((c) => [c.id ?? '', c]))
 
   const handleExportXlsx = async () => {
     if (!ensayoId) return
@@ -83,7 +96,53 @@ export function ExportarPage() {
   const handleExportPdf = async () => {
     if (!ensayoId) return
     setLoadingPdf(true)
-    window.open(`/resultados/${ensayoId}?print=1`, '_blank')
+
+    const ensayo = await getEnsayo(ensayoId)
+    if (!ensayo) { setLoadingPdf(false); return }
+
+    const [estudiantes, preguntas, respuestas, ausentes] = await Promise.all([
+      getEstudiantesByCurso(ensayo.cursoId),
+      getPreguntasByEnsayo(ensayoId),
+      getRespuestasByEnsayo(ensayoId),
+      getAusenciasByEnsayo(ensayoId),
+    ])
+    const resumen = calcularResumenCurso(ensayoId, estudiantes, preguntas, respuestas, umbrales, ausentes)
+    const curso = cursoMap[ensayo.cursoId] ?? null
+
+    // Render template then capture
+    setReporteData({ ensayo, curso, resumen })
+
+    // Wait for React to render the portal
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+
+    if (!reporteRef.current) { setLoadingPdf(false); return }
+
+    const canvas = await html2canvas(reporteRef.current, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false,
+    })
+
+    const imgData = canvas.toDataURL('image/png')
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pageW = pdf.internal.pageSize.getWidth()
+    const pageH = pdf.internal.pageSize.getHeight()
+    const ratio = pageW / (canvas.width / 2) // canvas.width is 2× due to scale:2
+    const totalH = (canvas.height / 2) * ratio
+
+    let yPos = 0
+    let remaining = totalH
+
+    while (remaining > 0) {
+      if (yPos > 0) pdf.addPage()
+      pdf.addImage(imgData, 'PNG', 0, -yPos, pageW, totalH)
+      yPos += pageH
+      remaining -= pageH
+    }
+
+    pdf.save(`${ensayo.nombre.replaceAll(/\s+/g, '_')}_reporte.pdf`)
+    setReporteData(null)
     setLoadingPdf(false)
   }
 
@@ -100,7 +159,7 @@ export function ExportarPage() {
             <SelectContent>
               {ensayos?.map((e) => (
                 <SelectItem key={e.id} value={e.id ?? ''}>
-                  {e.nombre} — {cursoMap[e.cursoId] ?? ''}
+                  {e.nombre} — {cursoMap[e.cursoId]?.nombre ?? ''}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -143,28 +202,50 @@ export function ExportarPage() {
                   <FileText className="h-5 w-5 text-red-600" />
                 </div>
                 <div>
-                  <CardTitle className="text-sm">PDF del dashboard</CardTitle>
+                  <CardTitle className="text-sm">Reporte PDF</CardTitle>
                   <CardDescription className="text-xs">Para consejo de profesores</CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground mb-4">
-                Abre el dashboard en una nueva pestaña. Usa <strong>Archivo → Imprimir → Guardar como PDF</strong> desde el navegador.
+                Genera un reporte con KPIs, distribución de niveles, resultados por eje y tabla de estudiantes.
               </p>
               <Button
                 className="w-full"
-                variant="outline"
                 disabled={!ensayoId || loadingPdf}
                 onClick={handleExportPdf}
               >
                 {loadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                Abrir para PDF
+                {loadingPdf ? 'Generando PDF…' : 'Descargar PDF'}
               </Button>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {/* Portal offscreen para renderizar el reporte antes de capturar */}
+      {reporteData && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: '-9999px',
+            zIndex: -1,
+            pointerEvents: 'none',
+          }}
+        >
+          <div ref={reporteRef}>
+            <ReporteTemplate
+              ensayo={reporteData.ensayo}
+              curso={reporteData.curso}
+              resumen={reporteData.resumen}
+              nombreColegio={config.nombreColegio}
+            />
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
