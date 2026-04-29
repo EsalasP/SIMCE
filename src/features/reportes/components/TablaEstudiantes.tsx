@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { bgNivel, cn } from '@/lib/utils'
+import { puntajeSimce } from '@/lib/calculos'
 import type { ResultadoEstudiante, UmbralesDesempeno } from '@/types'
 
 type SortField = 'nombre' | 'porcentaje' | 'nivelDesempeno'
@@ -73,6 +74,7 @@ export function TablaEstudiantes({ resultados }: TablaEstudiantesProps) {
                 <th className="text-center px-4 py-2">
                   <SortButton field="porcentaje" label="% Logro" />
                 </th>
+                <th className="text-center px-4 py-2 text-xs text-muted-foreground font-semibold">Pts SIMCE</th>
                 <th className="text-center px-4 py-2 text-xs text-muted-foreground font-semibold">Correctas</th>
                 <th className="text-center px-4 py-2">
                   <SortButton field="nivelDesempeno" label="Nivel" />
@@ -97,6 +99,9 @@ export function TablaEstudiantes({ resultados }: TablaEstudiantesProps) {
                       </div>
                       <span className="font-semibold text-xs w-10">{r.porcentaje}%</span>
                     </div>
+                  </td>
+                  <td className="px-4 py-2 text-center text-xs font-semibold text-muted-foreground">
+                    {puntajeSimce(r.porcentaje)}
                   </td>
                   <td className="px-4 py-2 text-center text-xs text-muted-foreground">
                     {r.correctas}/{r.total}

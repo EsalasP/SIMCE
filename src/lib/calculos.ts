@@ -208,6 +208,12 @@ export function calcularResumenCurso(
   }
 }
 
+// ─── Conversión a escala SIMCE (100–400) ─────────────────────────────────────
+
+export function puntajeSimce(porcentaje: number): number {
+  return Math.round(100 + Math.max(0, Math.min(100, porcentaje)) * 3)
+}
+
 // ─── Análisis pedagógico ──────────────────────────────────────────────────────
 
 export function oasConMenorLogro(resumen: ResumenCurso, n = 5): ResultadoPregunta[] {

@@ -6,6 +6,7 @@ import {
   BookOpen,
   PenLine,
   BarChart3,
+  TrendingUp,
   Download,
   Settings,
   ChevronLeft,
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { label: 'Ensayos', path: '/ensayos', icon: BookOpen },
   { label: 'Corrección', path: '/correccion', icon: PenLine },
   { label: 'Resultados', path: '/resultados', icon: BarChart3 },
+  { label: 'Comparar', path: '/comparar', icon: TrendingUp },
   { label: 'Exportar', path: '/exportar', icon: Download },
   { label: 'Configuración', path: '/configuracion', icon: Settings },
 ]

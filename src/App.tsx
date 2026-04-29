@@ -14,6 +14,7 @@ import { CorreccionPage } from '@/features/correccion/CorreccionPage'
 import { SeleccionEnsayoResultados } from '@/features/reportes/SeleccionEnsayoResultados'
 import { ResultadosPage } from '@/features/reportes/ResultadosPage'
 import { ExportarPage } from '@/features/exportar/ExportarPage'
+import { ComparacionPage } from '@/features/comparacion/ComparacionPage'
 
 function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   useTheme()
@@ -46,6 +47,7 @@ function AppRoutes() {
           <Route path="correccion/:ensayoId" element={<CorreccionPage />} />
           <Route path="resultados" element={<SeleccionEnsayoResultados />} />
           <Route path="resultados/:ensayoId" element={<ResultadosPage />} />
+          <Route path="comparar" element={<ComparacionPage />} />
           <Route path="exportar" element={<ExportarPage />} />
           <Route path="configuracion" element={<Configuracion />} />
         </Route>

@@ -17,6 +17,7 @@ import {
   generarResumenEjecutivo,
   oasConMenorLogro,
   ejesParaReforzar,
+  puntajeSimce,
 } from '@/lib/calculos'
 import { formatFecha, cn } from '@/lib/utils'
 import { useConfigStore } from '@/store'
@@ -135,8 +136,9 @@ export function ResultadosPage() {
           <Link to="/resultados"><ArrowLeft className="h-4 w-4" /> Resultados</Link>
         </Button>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <KPICard label="Promedio curso" value={`${resumen.promedio}%`} sub={`${resumen.totalEvaluados} evaluados`} />
+          <KPICard label="Puntaje SIMCE" value={`${puntajeSimce(resumen.promedio)}`} sub="escala 100–400" />
           <KPICard label="Adecuado" value={`${resumen.porcentajeAdecuado}%`} sub={`${resumen.distribucion.Adecuado} estudiantes`} color="emerald" />
           <KPICard label="Elemental" value={`${resumen.porcentajeElemental}%`} sub={`${resumen.distribucion.Elemental} estudiantes`} color="amber" />
           <KPICard label="Insuficiente" value={`${resumen.porcentajeInsuficiente}%`} sub={`${resumen.distribucion.Insuficiente} estudiantes`} color="red" />
