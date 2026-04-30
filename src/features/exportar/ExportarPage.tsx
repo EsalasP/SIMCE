@@ -142,6 +142,14 @@ export function ExportarPage() {
     while (remaining > 0) {
       if (page > 0) pdf.addPage()
       pdf.addImage(imgData, 'PNG', margin, margin - page * contentH, contentW, totalH)
+
+      // Mask content that bleeds outside the margin area (prevents row duplication at page breaks)
+      pdf.setFillColor(255, 255, 255)
+      pdf.rect(0, 0, pageW, margin, 'F')                  // top strip
+      pdf.rect(0, pageH - margin, pageW, margin + 1, 'F') // bottom strip
+      pdf.rect(0, 0, margin, pageH, 'F')                  // left strip
+      pdf.rect(pageW - margin, 0, margin + 1, pageH, 'F') // right strip
+
       page++
       remaining -= contentH
     }
