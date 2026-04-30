@@ -126,19 +126,24 @@ export function ExportarPage() {
 
     const imgData = canvas.toDataURL('image/png')
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const pageW = pdf.internal.pageSize.getWidth()
-    const pageH = pdf.internal.pageSize.getHeight()
-    const ratio = pageW / (canvas.width / 2) // canvas.width is 2× due to scale:2
+    const pageW = pdf.internal.pageSize.getWidth()   // 210mm
+    const pageH = pdf.internal.pageSize.getHeight()  // 297mm
+    const margin = 12                                 // mm all sides
+    const contentW = pageW - margin * 2              // 186mm
+    const contentH = pageH - margin * 2              // 273mm
+
+    // canvas.width is 2× real px due to scale:2
+    const ratio = contentW / (canvas.width / 2)
     const totalH = (canvas.height / 2) * ratio
 
-    let yPos = 0
+    let page = 0
     let remaining = totalH
 
     while (remaining > 0) {
-      if (yPos > 0) pdf.addPage()
-      pdf.addImage(imgData, 'PNG', 0, -yPos, pageW, totalH)
-      yPos += pageH
-      remaining -= pageH
+      if (page > 0) pdf.addPage()
+      pdf.addImage(imgData, 'PNG', margin, margin - page * contentH, contentW, totalH)
+      page++
+      remaining -= contentH
     }
 
     pdf.save(`${ensayo.nombre.replaceAll(/\s+/g, '_')}_reporte.pdf`)

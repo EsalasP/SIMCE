@@ -31,12 +31,12 @@ export function ReporteTemplate({ ensayo, curso, resumen, nombreColegio }: Props
     <div
       id="reporte-pdf-root"
       style={{
-        width: 794,
+        width: 840,
         background: '#fff',
         color: '#111827',
         fontFamily: 'system-ui, -apple-system, sans-serif',
         fontSize: 12,
-        padding: '32px 40px',
+        padding: '36px 48px',
         boxSizing: 'border-box',
       }}
     >
