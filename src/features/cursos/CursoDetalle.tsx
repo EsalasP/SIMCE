@@ -27,16 +27,23 @@ export function CursoDetalle() {
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState('')
   const [saving, setSaving] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const handleAdd = async () => {
     if (!nombre.trim() || !id) return
     setSaving(true)
-    await addEstudiante({ cursoId: id, nombre: nombre.trim(), rut: rut.trim() || undefined, creadoEn: new Date() })
-    setNombre('')
-    setRut('')
-    setSaving(false)
-    setOpen(false)
+    setErrorMsg('')
+    try {
+      await addEstudiante({ cursoId: id, nombre: nombre.trim(), rut: rut.trim() || undefined, creadoEn: new Date() })
+      setNombre('')
+      setRut('')
+      setOpen(false)
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'No se pudo agregar el estudiante.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleImport = async () => {
@@ -48,10 +55,16 @@ export function CursoDetalle() {
       .map((n) => ({ cursoId: id, nombre: n, creadoEn: new Date() }))
     if (lista.length === 0) return
     setSaving(true)
-    await addEstudiantesEnLote(lista)
-    setSaving(false)
-    setImportText('')
-    setImportOpen(false)
+    setErrorMsg('')
+    try {
+      await addEstudiantesEnLote(lista)
+      setImportText('')
+      setImportOpen(false)
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'No se pudo importar la lista.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const loading = curso === undefined || estudiantes === undefined
@@ -84,7 +97,7 @@ export function CursoDetalle() {
           <p className="text-sm text-muted-foreground">Sin estudiantes aún</p>
           <div className="flex gap-2">
             <Button size="sm" onClick={() => setOpen(true)}>Agregar uno a uno</Button>
-            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+            <Button size="sm" variant="outline" onClick={() => { setErrorMsg(''); setImportOpen(true) }}>
               Importar lista
             </Button>
           </div>
@@ -121,10 +134,10 @@ export function CursoDetalle() {
         subtitle={curso ? `${curso.nivel} · ${curso.anio}` : ''}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <Button variant="outline" size="sm" onClick={() => { setErrorMsg(''); setImportOpen(true) }}>
               <Upload className="h-4 w-4" /> Importar lista
             </Button>
-            <Button size="sm" onClick={() => setOpen(true)}>
+            <Button size="sm" onClick={() => { setErrorMsg(''); setOpen(true) }}>
               <Plus className="h-4 w-4" /> Agregar
             </Button>
           </div>
@@ -182,9 +195,12 @@ export function CursoDetalle() {
               />
             </div>
           </div>
+          {errorMsg && <p className="text-sm text-destructive">{errorMsg}</p>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button onClick={handleAdd} disabled={!nombre.trim() || saving}>Agregar</Button>
+            <Button onClick={handleAdd} disabled={!nombre.trim() || saving}>
+              {saving ? 'Agregando…' : 'Agregar'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -210,6 +226,7 @@ export function CursoDetalle() {
               Vista previa: {importCount} estudiantes detectados
             </p>
           </div>
+          {errorMsg && <p className="text-sm text-destructive">{errorMsg}</p>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setImportOpen(false)}>Cancelar</Button>
             <Button onClick={handleImport} disabled={importCount === 0 || saving}>
