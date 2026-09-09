@@ -35,7 +35,13 @@ export function CursoDetalle() {
     setSaving(true)
     setErrorMsg('')
     try {
-      await addEstudiante({ cursoId: id, nombre: nombre.trim(), rut: rut.trim() || undefined, creadoEn: new Date() })
+      const rutTrimmed = rut.trim()
+      await addEstudiante({
+        cursoId: id,
+        nombre: nombre.trim(),
+        creadoEn: new Date(),
+        ...(rutTrimmed ? { rut: rutTrimmed } : {}),
+      })
       setNombre('')
       setRut('')
       setOpen(false)
