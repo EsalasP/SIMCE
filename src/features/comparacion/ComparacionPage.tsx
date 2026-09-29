@@ -1,4 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { FileText, Loader2 } from 'lucide-react'
 import { Topbar } from '@/components/layout/Topbar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,6 +18,8 @@ import { calcularResumenCurso, puntajeSimce } from '@/lib/calculos'
 import { formatFecha, bgNivel, cn } from '@/lib/utils'
 import type { ResumenCurso, Ensayo } from '@/types'
 import { useConfigStore } from '@/store'
+import { descargarPdf } from '@/lib/pdf'
+import { ComparacionTemplate, type Tendencia } from './ComparacionTemplate'
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
 
@@ -25,7 +29,7 @@ interface ResumenConEnsayo {
 }
 
 export function ComparacionPage() {
-  const { umbrales } = useConfigStore()
+  const { umbrales, config } = useConfigStore()
   const cursos = useCursos()
   const ensayos = useEnsayos()
 
@@ -33,6 +37,9 @@ export function ComparacionPage() {
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [resultados, setResultados] = useState<ResumenConEnsayo[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingPdf, setLoadingPdf] = useState(false)
+  const [renderPdf, setRenderPdf] = useState(false)
+  const pdfRef = useRef<HTMLDivElement>(null)
 
   const ensayosCurso = ensayos?.filter((e) => e.cursoId === cursoId) ?? []
 
@@ -101,13 +108,29 @@ export function ComparacionPage() {
     return bLast - aLast
   })
 
-  function tendencia(pcts: (number | null)[]): 'sube' | 'baja' | 'igual' | null {
+  function tendencia(pcts: (number | null)[]): Tendencia {
     const vals = pcts.filter((p): p is number => p !== null)
     if (vals.length < 2) return null
     const diff = vals[vals.length - 1] - vals[0]
     if (diff > 3) return 'sube'
     if (diff < -3) return 'baja'
     return 'igual'
+  }
+
+  const cursoNombre = cursos?.find((c) => c.id === cursoId)?.nombre ?? ''
+
+  const handleExportPdf = async () => {
+    setLoadingPdf(true)
+    setRenderPdf(true)
+    try {
+      // Wait for React to render the portal
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      if (!pdfRef.current) return
+      await descargarPdf(pdfRef.current, `Comparacion_${cursoNombre.replaceAll(/\s+/g, '_')}.pdf`)
+    } finally {
+      setRenderPdf(false)
+      setLoadingPdf(false)
+    }
   }
 
   return (
@@ -138,6 +161,12 @@ export function ComparacionPage() {
               >
                 {loading ? 'Cargando…' : 'Comparar'}
               </Button>
+              {!loading && resultados.length >= 2 && (
+                <Button variant="outline" disabled={loadingPdf} onClick={handleExportPdf}>
+                  {loadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                  {loadingPdf ? 'Generando PDF…' : 'Descargar PDF'}
+                </Button>
+              )}
             </div>
 
             {cursoId && ensayosCurso.length > 0 && (
@@ -301,6 +330,22 @@ export function ComparacionPage() {
           </>
         )}
       </div>
+
+      {/* Portal offscreen para renderizar el reporte antes de capturar */}
+      {renderPdf && createPortal(
+        <div style={{ position: 'fixed', top: 0, left: '-9999px', zIndex: -1, pointerEvents: 'none' }}>
+          <div ref={pdfRef}>
+            <ComparacionTemplate
+              resultados={resultados}
+              estudiantes={estudiantesTabla.map((e) => ({ ...e, tendencia: tendencia(e.pcts) }))}
+              cursoNombre={cursoNombre}
+              nombreColegio={config.nombreColegio}
+              colors={COLORS}
+            />
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }

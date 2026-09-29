@@ -20,8 +20,7 @@ import {
 import { calcularResumenCurso } from '@/lib/calculos'
 import { useConfigStore } from '@/store'
 import * as XLSX from 'xlsx'
-import html2canvas from 'html2canvas'
-import jsPDF from 'jspdf'
+import { descargarPdf } from '@/lib/pdf'
 import { ReporteTemplate } from './ReporteTemplate'
 import type { Ensayo, Curso, ResumenCurso } from '@/types'
 
@@ -117,44 +116,7 @@ export function ExportarPage() {
 
     if (!reporteRef.current) { setLoadingPdf(false); return }
 
-    const canvas = await html2canvas(reporteRef.current, {
-      scale: 2,
-      backgroundColor: '#ffffff',
-      useCORS: true,
-      logging: false,
-    })
-
-    const imgData = canvas.toDataURL('image/png')
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const pageW = pdf.internal.pageSize.getWidth()   // 210mm
-    const pageH = pdf.internal.pageSize.getHeight()  // 297mm
-    const margin = 12                                 // mm all sides
-    const contentW = pageW - margin * 2              // 186mm
-    const contentH = pageH - margin * 2              // 273mm
-
-    // canvas.width is 2× real px due to scale:2
-    const ratio = contentW / (canvas.width / 2)
-    const totalH = (canvas.height / 2) * ratio
-
-    let page = 0
-    let remaining = totalH
-
-    while (remaining > 0) {
-      if (page > 0) pdf.addPage()
-      pdf.addImage(imgData, 'PNG', margin, margin - page * contentH, contentW, totalH)
-
-      // Mask content that bleeds outside the margin area (prevents row duplication at page breaks)
-      pdf.setFillColor(255, 255, 255)
-      pdf.rect(0, 0, pageW, margin, 'F')                  // top strip
-      pdf.rect(0, pageH - margin, pageW, margin + 1, 'F') // bottom strip
-      pdf.rect(0, 0, margin, pageH, 'F')                  // left strip
-      pdf.rect(pageW - margin, 0, margin + 1, pageH, 'F') // right strip
-
-      page++
-      remaining -= contentH
-    }
-
-    pdf.save(`${ensayo.nombre.replaceAll(/\s+/g, '_')}_reporte.pdf`)
+    await descargarPdf(reporteRef.current, `${ensayo.nombre.replaceAll(/\s+/g, '_')}_reporte.pdf`)
     setReporteData(null)
     setLoadingPdf(false)
   }
